@@ -50,6 +50,10 @@
         <button id="stopBtn" class="secondary" style="display:none">หยุด</button>
       </div>
       <video id="video" playsinline></video>
+      <div class="row" style="margin-top:8px">
+        <button id="fileBtn" class="secondary">🖼️ อัปโหลดไฟล์รูป / PDF</button>
+      </div>
+      <input id="fileInput" type="file" accept="image/*,application/pdf,.pdf" hidden />
       <p class="hint" id="scanHint"></p>
     </div>
 
@@ -67,7 +71,9 @@
     </div>
   </main>
 
+  <script src="vendor/zxing.min.js"></script>
   <script src="bcbp.js"></script>
+  <script src="scanner.js"></script>
   <script>
     const $ = (id) => document.getElementById(id);
     const SAMPLE = "M1DESMARAIS/LUC       EABC123 YULFRAAC 0834 226F001A0025 100";
@@ -104,48 +110,26 @@
     $("parseBtn").onclick = () => doParse($("raw").value);
     $("sampleBtn").onclick = () => { $("raw").value = SAMPLE; doParse(SAMPLE); };
 
-    // ---- การสแกนด้วยกล้อง ----
-    // ใช้ BarcodeDetector API ในตัวเบราว์เซอร์ (รองรับ PDF417/QR/Aztec บน Chrome/Android)
-    // ทำงานแบบ offline ได้ ไม่ต้องโหลด library ภายนอก
-    let stream = null, scanning = false;
+    function gotRaw(raw) { $("raw").value = raw; doParse(raw); }
+
+    // ---- สแกนด้วยกล้อง (Scanner เลือก BarcodeDetector หรือ ZXing ให้อัตโนมัติ) ----
+    let stopFn = null;
 
     async function startScan() {
-      if (!("BarcodeDetector" in window)) {
-        $("scanHint").innerHTML =
-          '<span class="err">เบราว์เซอร์นี้ยังไม่รองรับ BarcodeDetector — ' +
-          'ใช้ Chrome บน Android หรือวางข้อความดิบด้านล่างแทน</span>';
-        return;
-      }
-      const formats = await BarcodeDetector.getSupportedFormats();
-      const want = ["pdf417", "qr_code", "aztec"].filter(f => formats.includes(f));
-      const detector = new BarcodeDetector({ formats: want.length ? want : formats });
-      try {
-        stream = await navigator.mediaDevices.getUserMedia(
-          { video: { facingMode: "environment" } });
-      } catch (e) {
-        $("scanHint").innerHTML = `<span class="err">เปิดกล้องไม่สำเร็จ: ${e.message}</span>`;
-        return;
-      }
-      const video = $("video");
-      video.srcObject = stream; video.style.display = "block";
-      await video.play();
+      $("video").style.display = "block";
       $("scanBtn").style.display = "none"; $("stopBtn").style.display = "block";
-      $("scanHint").textContent = "จ่อบาร์โค้ด 2 มิติเข้ากล้อง...";
-      scanning = true;
-      const tick = async () => {
-        if (!scanning) return;
-        try {
-          const codes = await detector.detect(video);
-          if (codes.length) { stopScan(); $("raw").value = codes[0].rawValue; doParse(codes[0].rawValue); return; }
-        } catch (_) {}
-        requestAnimationFrame(tick);
-      };
-      requestAnimationFrame(tick);
+      $("scanHint").textContent = Scanner.hasNative()
+        ? "จ่อบาร์โค้ด 2 มิติเข้ากล้อง..."
+        : "จ่อบาร์โค้ดเข้ากล้อง (โหมด ZXing สำหรับ iOS/Safari)...";
+      stopFn = await Scanner.startCamera(
+        $("video"),
+        (raw) => { stopScan(); gotRaw(raw); },
+        (err) => { stopScan(); $("scanHint").innerHTML = `<span class="err">${err.message}</span>`; }
+      );
     }
 
     function stopScan() {
-      scanning = false;
-      if (stream) stream.getTracks().forEach(t => t.stop());
+      if (stopFn) { stopFn(); stopFn = null; }
       $("video").style.display = "none";
       $("scanBtn").style.display = "block"; $("stopBtn").style.display = "none";
       $("scanHint").textContent = "";
@@ -153,6 +137,21 @@
 
     $("scanBtn").onclick = startScan;
     $("stopBtn").onclick = stopScan;
+
+    // ---- อัปโหลดไฟล์รูป / PDF ----
+    $("fileBtn").onclick = () => $("fileInput").click();
+    $("fileInput").onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      $("scanHint").textContent = "กำลังถอดรหัสจากไฟล์...";
+      try {
+        gotRaw(await Scanner.decodeFile(file));
+        $("scanHint").textContent = "";
+      } catch (err) {
+        $("scanHint").innerHTML = `<span class="err">${err.message}</span>`;
+      }
+      e.target.value = "";
+    };
 
     if ("serviceWorker" in navigator)
       navigator.serviceWorker.register("sw.js").catch(() => {});

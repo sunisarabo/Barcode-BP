@@ -1,10 +1,14 @@
 /* service worker — แคชไฟล์แอปให้ใช้งาน offline ได้ (สำคัญสำหรับหน้า Gate/มือถือ) */
-const CACHE = "bp-reader-v1";
+const CACHE = "bp-reader-v2";
 const ASSETS = [
   "./index.html",
   "./bcbp.js",
+  "./scanner.js",
   "./manifest.webmanifest",
   "./icon.svg",
+  "./vendor/zxing.min.js",
+  "./vendor/pdf.min.mjs",
+  "./vendor/pdf.worker.min.mjs",
 ];
 
 self.addEventListener("install", (e) => {

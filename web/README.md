@@ -5,11 +5,15 @@
 
 ## จุดเด่น
 
-- **ไม่พึ่ง library ภายนอก** — ใช้ `BarcodeDetector` API ในตัวเบราว์เซอร์
-  ถอดบาร์โค้ด PDF417 / QR / Aztec ได้ (รองรับดีบน Chrome/Edge บน Android และเดสก์ท็อป)
-- **สแกนผ่านกล้อง** หรือ **วางข้อความดิบ** ก็ได้
-- **ทำงาน offline** — เป็น PWA มี service worker แคชไฟล์ไว้ (เหมาะกับจุด Gate ที่เน็ตไม่เสถียร)
-- **ติดตั้งลงมือถือ** — เปิดใน Chrome แล้วเลือก "Add to Home screen"
+- **สแกนผ่านกล้อง** — เลือกเครื่องมือให้อัตโนมัติ:
+  - `BarcodeDetector` API ในตัวเบราว์เซอร์ (Chrome/Edge, Android/เดสก์ท็อป) — เร็ว
+  - **ZXing** (vendor ไว้ในเครื่อง) — fallback สำหรับ **iOS/Safari** ที่ไม่มี BarcodeDetector
+- **อัปโหลดไฟล์** — รูป (PNG/JPG) หรือ **PDF** (ใช้ pdf.js เรนเดอร์หน้าเป็นภาพก่อนถอด)
+- **วางข้อความดิบ** ก็ได้
+- **ทำงาน offline** — เป็น PWA มี service worker แคชไฟล์ทั้งหมด (รวมไลบรารีที่ vendor ไว้)
+- **ติดตั้งลงมือถือ** — เปิดในเบราว์เซอร์แล้วเลือก "Add to Home screen"
+
+รองรับ **iOS/Safari** และ Chrome/Edge ครบ — ไม่ต้องต่อเน็ต (ไลบรารีอยู่ใน `vendor/`)
 
 ## วิธีรัน
 
@@ -29,12 +33,15 @@ python3 -m http.server 8000
 |------|---------|
 | `index.html` | UI + ตรรกะสแกน/แสดงผล |
 | `bcbp.js` | parser (พอร์ตจาก Python) ใช้ได้ทั้งเบราว์เซอร์และ Node.js |
+| `scanner.js` | ชั้นถอดภาพ→string (เลือก BarcodeDetector/ZXing, รองรับกล้อง/รูป/PDF) |
+| `vendor/zxing.min.js` | ZXing สำหรับ iOS/Safari (vendor ไว้ offline) |
+| `vendor/pdf.min.mjs`, `vendor/pdf.worker.min.mjs` | pdf.js สำหรับอ่านไฟล์ PDF |
 | `manifest.webmanifest` | ข้อมูล PWA ให้ติดตั้งเป็นแอปได้ |
 | `sw.js` | service worker แคชไฟล์เพื่อ offline |
 | `icon.svg` | ไอคอนแอป |
 
 ## หมายเหตุความเข้ากันได้
 
-`BarcodeDetector` รองรับดีบน Chrome/Edge (Android + เดสก์ท็อป) แต่ **Safari/iOS
-ยังไม่รองรับ** — บน iOS ให้ใช้ช่อง "วางข้อความดิบ" หรือเสริมด้วยไลบรารี JS เช่น
-`@zxing/browser` (โหลดเพิ่มได้) หากต้องรองรับ iOS ครบ
+- Chrome/Edge (Android/เดสก์ท็อป): ใช้ `BarcodeDetector` — เร็วสุด
+- iOS/Safari: ไม่มี `BarcodeDetector` → ระบบ fallback ไป **ZXing** อัตโนมัติ (ทั้งกล้องและไฟล์)
+- ไฟล์ PDF: ใช้ pdf.js เรนเดอร์หน้าเป็นภาพก่อนถอด (สแกนทุกหน้าจนกว่าจะเจอบาร์โค้ด)

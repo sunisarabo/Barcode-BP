@@ -9,6 +9,10 @@
 cd ports/java
 javac BcbpParser.java
 java bcbp.BcbpParser "M1DESMARAIS/LUC       EABC123 YULFRAAC 0834 226F001A0025 100"
+
+# รัน unit test (ไม่พึ่ง JUnit)
+javac BcbpParser.java BcbpParserTest.java
+java bcbp.BcbpParserTest        # -> 27 passed, 0 failed
 ```
 
 เรียกใช้ในโค้ด:
@@ -35,9 +39,9 @@ Console.WriteLine(d.Legs[0].FlightNumber);
 
 ## สถานะการทดสอบ
 
-- **Java** — คอมไพล์และรันผ่านแล้ว ผลตรงกับ reference (Python)
-- **C#** — ตรรกะ mirror จาก Java แบบ field-per-field แต่ยังไม่ได้คอมไพล์
-  ในสภาพแวดล้อมนี้ (ไม่มี .NET SDK) — แนะนำรัน unit test ฝั่งคุณก่อนขึ้นระบบจริง
+- **Java** — คอมไพล์และรัน unit test ผ่านแล้ว (`BcbpParserTest.java`, 27 เคส) ผลตรงกับ Python
+- **C#** — มี unit test (`BcbpParserTest.cs`, ตรรกะเดียวกับ Java) แต่ยังไม่ได้คอมไพล์
+  ในสภาพแวดล้อมนี้ (ไม่มี .NET SDK) — รัน `dotnet run` หรือรวมกับ xUnit ฝั่งคุณก่อนขึ้นจริง
 
 ## การเชื่อมกับตัวสแกน (ภาพ → string)
 

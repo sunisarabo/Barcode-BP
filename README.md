@@ -97,9 +97,15 @@ parser ตัวเดียวกันถูกพอร์ตไปหลา�
 | **มือถือเจ้าหน้าที่** | เว็บแอปแบบ PWA (ติดตั้งลงเครื่องได้ offline) | `web/` |
 | **ระบบเดิมของสนามบิน** | พอร์ต C# / Java | `ports/` |
 
-- **เว็บแอป / PWA** (`web/`) — หน้าเดียวจบ สแกนบาร์โค้ดผ่านกล้องด้วย `BarcodeDetector`
-  ในตัวเบราว์เซอร์ (PDF417/QR/Aztec) ทำงาน offline ได้ ติดตั้งลงมือถือได้ — ดู [`web/README.md`](web/README.md)
-- **C# / Java** (`ports/`) — parser ตรรกะเดียวกันสำหรับฝังในระบบเดิม — ดู [`ports/README.md`](ports/README.md)
+- **เว็บแอป / PWA** (`web/`) — หน้าเดียวจบ สแกนผ่านกล้อง (BarcodeDetector + ZXing fallback
+  สำหรับ iOS/Safari), อัปโหลดไฟล์รูป/PDF, ทำงาน offline, ติดตั้งลงมือถือได้ — ดู [`web/README.md`](web/README.md)
+- **C# / Java** (`ports/`) — parser ตรรกะเดียวกันสำหรับฝังในระบบเดิม (มี unit test) — ดู [`ports/README.md`](ports/README.md)
+
+## เชื่อมกับระบบเช็กอิน (DCS)
+
+parser ให้แค่ "ข้อมูลจากบัตร" — การตรวจว่าผู้โดยสารขึ้นเครื่องได้ไหมต้องต่อกับ
+**ระบบเช็กอิน (DCS)** ดูสถาปัตยกรรม flow และจุดต่อในโค้ดได้ที่ [`INTEGRATION.md`](INTEGRATION.md)
+พร้อมตัวอย่างโครง adapter ที่ [`examples/checkin_integration.py`](examples/checkin_integration.py)
 
 ## โครงสร้างโปรเจกต์
 
@@ -109,15 +115,18 @@ bcbp/                 # ไลบรารี Python (reference implementation)
   fields.py           #   นิยาม field ตามสเปก IATA (mandatory / conditional)
   parser.py           #   ตัว parser หลัก (cursor-based)
 examples/
-  decode_string.py    # ถอดจาก raw string + แสดงผลภาษาไทย
-  scan_image.py       # ถอดจากไฟล์ภาพ (ZXing/ZBar) แล้วส่งต่อ parser
+  decode_string.py       # ถอดจาก raw string + แสดงผลภาษาไทย
+  scan_image.py          # ถอดจากไฟล์ภาพ (ZXing/ZBar) แล้วส่งต่อ parser
+  checkin_integration.py # โครงตัวอย่างเชื่อม parser เข้ากับระบบเช็กอิน (DCS)
 tests/
-  test_parser.py      # ชุดทดสอบ single-leg / multi-leg / conditional / security
-web/                  # เว็บแอป / PWA (Gate PC + มือถือ)
-  index.html, bcbp.js, sw.js, manifest.webmanifest, icon.svg
-ports/                # พอร์ต parser ภาษาอื่น
-  csharp/BcbpParser.cs
-  java/BcbpParser.java
+  test_parser.py         # ชุดทดสอบ single-leg / multi-leg / conditional / security
+web/                     # เว็บแอป / PWA (Gate PC + มือถือ, รองรับ iOS)
+  index.html, bcbp.js, scanner.js, sw.js, manifest.webmanifest, icon.svg
+  vendor/                #   ZXing + pdf.js (vendor ไว้ให้ทำงาน offline)
+ports/                   # พอร์ต parser ภาษาอื่น (+ unit test)
+  csharp/BcbpParser.cs,  csharp/BcbpParserTest.cs
+  java/BcbpParser.java,  java/BcbpParserTest.java
+INTEGRATION.md           # สถาปัตยกรรมการเชื่อมกับระบบเช็กอิน (DCS)
 ```
 
 ## การทดสอบ
