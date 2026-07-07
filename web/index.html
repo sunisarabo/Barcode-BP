@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b5" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <title>Boarding Pass Reader — IATA BCBP</title>
+  <style>
+    :root { --bg:#0f1720; --card:#182430; --fg:#e6edf3; --mut:#8fa3b3; --acc:#22c98b; --err:#ff6b6b; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+           background:var(--bg); color:var(--fg); -webkit-text-size-adjust:100%; }
+    header { padding:16px; text-align:center; border-bottom:1px solid #24313d; }
+    header h1 { margin:0; font-size:1.1rem; }
+    header p { margin:4px 0 0; color:var(--mut); font-size:.8rem; }
+    main { max-width:720px; margin:0 auto; padding:16px; }
+    .card { background:var(--card); border:1px solid #24313d; border-radius:12px;
+            padding:14px; margin-bottom:14px; }
+    button { font-size:1rem; padding:12px 16px; border-radius:10px; border:0;
+             background:var(--acc); color:#04231a; font-weight:600; cursor:pointer; width:100%; }
+    button.secondary { background:#2a3a48; color:var(--fg); }
+    button:active { transform:translateY(1px); }
+    .row { display:flex; gap:8px; }
+    #video { width:100%; border-radius:10px; background:#000; display:none; aspect-ratio:4/3; object-fit:cover; }
+    textarea { width:100%; min-height:64px; background:#0b131b; color:var(--fg);
+               border:1px solid #24313d; border-radius:10px; padding:10px; font-family:monospace; }
+    label { display:block; font-size:.8rem; color:var(--mut); margin:0 0 6px; }
+    table { width:100%; border-collapse:collapse; font-size:.9rem; }
+    td { padding:6px 4px; border-bottom:1px solid #22303c; vertical-align:top; }
+    td.k { color:var(--mut); width:45%; }
+    td.v { font-weight:600; word-break:break-all; }
+    .leg-title { color:var(--acc); font-weight:700; margin:14px 0 6px; font-size:.95rem; }
+    .err { color:var(--err); }
+    .hint { color:var(--mut); font-size:.78rem; margin-top:8px; }
+    .badge { display:inline-block; background:#0b131b; border:1px solid #24313d; border-radius:999px;
+             padding:2px 10px; font-size:.75rem; color:var(--mut); margin-left:6px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Boarding Pass Reader <span class="badge">IATA BCBP</span></h1>
+    <p>สแกนหรือวางข้อมูลบาร์โค้ด แล้วถอดรหัสตามมาตรฐาน Resolution 792</p>
+  </header>
+
+  <main>
+    <div class="card">
+      <div class="row">
+        <button id="scanBtn">📷 สแกนด้วยกล้อง</button>
+        <button id="stopBtn" class="secondary" style="display:none">หยุด</button>
+      </div>
+      <video id="video" playsinline></video>
+      <p class="hint" id="scanHint"></p>
+    </div>
+
+    <div class="card">
+      <label for="raw">หรือวางข้อความดิบ (raw string) จากบาร์โค้ด</label>
+      <textarea id="raw" placeholder="M1DESMARAIS/LUC       EABC123 YULFRAAC 0834 226F001A0025 100"></textarea>
+      <div class="row" style="margin-top:8px">
+        <button id="parseBtn">ถอดรหัส</button>
+        <button id="sampleBtn" class="secondary">ใส่ตัวอย่าง</button>
+      </div>
+    </div>
+
+    <div class="card" id="resultCard" style="display:none">
+      <div id="result"></div>
+    </div>
+  </main>
+
+  <script src="bcbp.js"></script>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const SAMPLE = "M1DESMARAIS/LUC       EABC123 YULFRAAC 0834 226F001A0025 100";
+    const yearHint = new Date().getFullYear();
+
+    function render(data) {
+      const L = BCBP.LABELS_TH;
+      let html = "<table>";
+      for (const k of ["passengerName", "electronicTicketIndicator", "numberOfLegs"])
+        html += `<tr><td class="k">${L[k]||k}</td><td class="v">${data[k] ?? "-"}</td></tr>`;
+      html += "</table>";
+      data.legs.forEach((leg, i) => {
+        html += `<div class="leg-title">✈️ เที่ยวบินช่วงที่ ${i+1}</div><table>`;
+        for (const k of ["operatingCarrierPNR","fromCity","toCity","operatingCarrier",
+                         "flightNumber","dateOfFlight","flightDate","compartmentCode",
+                         "seatNumber","checkInSequenceNumber"])
+          if (leg[k] != null)
+            html += `<tr><td class="k">${L[k]||k}</td><td class="v">${leg[k]}</td></tr>`;
+        html += "</table>";
+      });
+      $("result").innerHTML = html;
+      $("resultCard").style.display = "block";
+    }
+
+    function doParse(raw) {
+      try {
+        render(BCBP.parse(raw.trim(), { yearHint }));
+      } catch (e) {
+        $("result").innerHTML = `<div class="err">อ่านไม่สำเร็จ: ${e.message}</div>`;
+        $("resultCard").style.display = "block";
+      }
+    }
+
+    $("parseBtn").onclick = () => doParse($("raw").value);
+    $("sampleBtn").onclick = () => { $("raw").value = SAMPLE; doParse(SAMPLE); };
+
+    // ---- การสแกนด้วยกล้อง ----
+    // ใช้ BarcodeDetector API ในตัวเบราว์เซอร์ (รองรับ PDF417/QR/Aztec บน Chrome/Android)
+    // ทำงานแบบ offline ได้ ไม่ต้องโหลด library ภายนอก
+    let stream = null, scanning = false;
+
+    async function startScan() {
+      if (!("BarcodeDetector" in window)) {
+        $("scanHint").innerHTML =
+          '<span class="err">เบราว์เซอร์นี้ยังไม่รองรับ BarcodeDetector — ' +
+          'ใช้ Chrome บน Android หรือวางข้อความดิบด้านล่างแทน</span>';
+        return;
+      }
+      const formats = await BarcodeDetector.getSupportedFormats();
+      const want = ["pdf417", "qr_code", "aztec"].filter(f => formats.includes(f));
+      const detector = new BarcodeDetector({ formats: want.length ? want : formats });
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(
+          { video: { facingMode: "environment" } });
+      } catch (e) {
+        $("scanHint").innerHTML = `<span class="err">เปิดกล้องไม่สำเร็จ: ${e.message}</span>`;
+        return;
+      }
+      const video = $("video");
+      video.srcObject = stream; video.style.display = "block";
+      await video.play();
+      $("scanBtn").style.display = "none"; $("stopBtn").style.display = "block";
+      $("scanHint").textContent = "จ่อบาร์โค้ด 2 มิติเข้ากล้อง...";
+      scanning = true;
+      const tick = async () => {
+        if (!scanning) return;
+        try {
+          const codes = await detector.detect(video);
+          if (codes.length) { stopScan(); $("raw").value = codes[0].rawValue; doParse(codes[0].rawValue); return; }
+        } catch (_) {}
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    }
+
+    function stopScan() {
+      scanning = false;
+      if (stream) stream.getTracks().forEach(t => t.stop());
+      $("video").style.display = "none";
+      $("scanBtn").style.display = "block"; $("stopBtn").style.display = "none";
+      $("scanHint").textContent = "";
+    }
+
+    $("scanBtn").onclick = startScan;
+    $("stopBtn").onclick = stopScan;
+
+    if ("serviceWorker" in navigator)
+      navigator.serviceWorker.register("sw.js").catch(() => {});
+  </script>
+</body>
+</html>

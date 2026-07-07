@@ -86,18 +86,38 @@ python examples/scan_image.py boardingpass.png
 
 > ⚠️ บาร์โค้ด 1 มิติ (แบบสินค้าทั่วไป) **ไม่รองรับ** — เก็บข้อมูลไม่พอตามสเปก IATA
 
+## รูปแบบการใช้งาน (Deployment)
+
+parser ตัวเดียวกันถูกพอร์ตไปหลายแพลตฟอร์ม เลือกใช้ตามจุดติดตั้ง:
+
+| จุดติดตั้ง | ใช้ | โฟลเดอร์ |
+|-----------|-----|----------|
+| Backend / Kiosk / สคริปต์ | Python | `bcbp/` |
+| **Gate PC (เดสก์ท็อป)** | เว็บแอป (สแกนผ่านกล้อง) | `web/` |
+| **มือถือเจ้าหน้าที่** | เว็บแอปแบบ PWA (ติดตั้งลงเครื่องได้ offline) | `web/` |
+| **ระบบเดิมของสนามบิน** | พอร์ต C# / Java | `ports/` |
+
+- **เว็บแอป / PWA** (`web/`) — หน้าเดียวจบ สแกนบาร์โค้ดผ่านกล้องด้วย `BarcodeDetector`
+  ในตัวเบราว์เซอร์ (PDF417/QR/Aztec) ทำงาน offline ได้ ติดตั้งลงมือถือได้ — ดู [`web/README.md`](web/README.md)
+- **C# / Java** (`ports/`) — parser ตรรกะเดียวกันสำหรับฝังในระบบเดิม — ดู [`ports/README.md`](ports/README.md)
+
 ## โครงสร้างโปรเจกต์
 
 ```
-bcbp/
-  __init__.py     # public API: parse(), BCBPParseError
-  fields.py       # นิยาม field ตามสเปก IATA (mandatory / conditional)
-  parser.py       # ตัว parser หลัก (cursor-based)
+bcbp/                 # ไลบรารี Python (reference implementation)
+  __init__.py         #   public API: parse(), BCBPParseError
+  fields.py           #   นิยาม field ตามสเปก IATA (mandatory / conditional)
+  parser.py           #   ตัว parser หลัก (cursor-based)
 examples/
-  decode_string.py  # ถอดจาก raw string + แสดงผลภาษาไทย
-  scan_image.py     # ถอดจากไฟล์ภาพ (ZXing/ZBar) แล้วส่งต่อ parser
+  decode_string.py    # ถอดจาก raw string + แสดงผลภาษาไทย
+  scan_image.py       # ถอดจากไฟล์ภาพ (ZXing/ZBar) แล้วส่งต่อ parser
 tests/
-  test_parser.py    # ชุดทดสอบ single-leg / multi-leg / conditional / security
+  test_parser.py      # ชุดทดสอบ single-leg / multi-leg / conditional / security
+web/                  # เว็บแอป / PWA (Gate PC + มือถือ)
+  index.html, bcbp.js, sw.js, manifest.webmanifest, icon.svg
+ports/                # พอร์ต parser ภาษาอื่น
+  csharp/BcbpParser.cs
+  java/BcbpParser.java
 ```
 
 ## การทดสอบ
