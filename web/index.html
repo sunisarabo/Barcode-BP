@@ -35,6 +35,15 @@
     @keyframes scanline { 0%,100%{transform:translateY(-42px)} 50%{transform:translateY(42px)} }
     textarea { width:100%; min-height:64px; background:#0b131b; color:var(--fg);
                border:1px solid #24313d; border-radius:10px; padding:10px; font-family:monospace; }
+    input { width:100%; padding:11px 12px; border-radius:10px; border:1px solid #24313d;
+            background:#0b131b; color:var(--fg); font-size:1rem; }
+    .alert { padding:14px; border-radius:12px; margin-bottom:12px; font-weight:700; text-align:center; }
+    .alert-ok { background:rgba(34,201,139,.15); border:2px solid var(--acc); color:var(--acc); }
+    .alert-bad { background:rgba(255,107,107,.15); border:2px solid var(--err); color:var(--err);
+                 animation:blink 1s step-start infinite; }
+    .alert .big { font-size:1.35rem; display:block; margin-bottom:4px; }
+    .alert .sub { font-weight:400; font-size:.85rem; opacity:.9; }
+    @keyframes blink { 50% { opacity:.45 } }
     label { display:block; font-size:.8rem; color:var(--mut); margin:0 0 6px; }
     table { width:100%; border-collapse:collapse; font-size:.9rem; }
     td { padding:6px 4px; border-bottom:1px solid #22303c; vertical-align:top; }
@@ -54,6 +63,19 @@
   </header>
 
   <main>
+    <div class="card" id="gateCard">
+      <label>🎫 ตั้งค่าประตู (Gate) — เที่ยวบิน/วันที่ที่กำลังเปิดบอร์ด</label>
+      <div class="row">
+        <input id="gateCarrier" placeholder="สายการบิน เช่น MU" maxlength="3" style="flex:1" />
+        <input id="gateFlight" placeholder="เที่ยวบิน เช่น 727" inputmode="numeric" style="flex:1" />
+      </div>
+      <div class="row" style="margin-top:8px">
+        <input id="gateDate" type="date" style="flex:1" />
+        <button id="gateClear" class="secondary" style="flex:0 0 auto; width:auto; padding:12px 14px">ล้าง</button>
+      </div>
+      <p class="hint">ตั้งไว้แล้วระบบจะ <b>เตือนสีแดง + เสียง</b> ถ้าสแกนบัตรที่ผิดเที่ยวบินหรือผิดวัน · เว้นว่าง = ไม่ตรวจ</p>
+    </div>
+
     <div class="card">
       <div class="row">
         <button id="scanBtn">📷 สแกนด้วยกล้อง</button>
@@ -94,6 +116,7 @@
 
   <script src="vendor/zxing.min.js"></script>
   <script src="bcbp.js"></script>
+  <script src="validate.js"></script>
   <script src="scanner.js"></script>
   <script src="samples.js"></script>
   <script>
@@ -101,9 +124,59 @@
     const SAMPLE = "M1DESMARAIS/LUC       EABC123 YULFRAAC 0834 226F001A0025 100";
     const yearHint = new Date().getFullYear();
 
+    // ---- ตั้งค่าประตู (Gate) + จำค่าไว้ใน localStorage ----
+    const GATE_KEY = "bp-gate-config";
+    function gateConfig() {
+      return { carrier: $("gateCarrier").value, flight: $("gateFlight").value, dateISO: $("gateDate").value };
+    }
+    function saveGate() { try { localStorage.setItem(GATE_KEY, JSON.stringify(gateConfig())); } catch (_) {} }
+    function loadGate() {
+      try {
+        const c = JSON.parse(localStorage.getItem(GATE_KEY) || "{}");
+        if (c.carrier) $("gateCarrier").value = c.carrier;
+        if (c.flight) $("gateFlight").value = c.flight;
+        $("gateDate").value = c.dateISO || new Date().toISOString().slice(0, 10);
+      } catch (_) { $("gateDate").value = new Date().toISOString().slice(0, 10); }
+    }
+    ["gateCarrier", "gateFlight", "gateDate"].forEach((id) => $(id).addEventListener("change", saveGate));
+    $("gateClear").onclick = () => {
+      $("gateCarrier").value = ""; $("gateFlight").value = "";
+      $("gateDate").value = new Date().toISOString().slice(0, 10); saveGate();
+    };
+    loadGate();
+
+    function beep(times) {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        let t = ctx.currentTime;
+        for (let i = 0; i < times; i++) {
+          const o = ctx.createOscillator(), g = ctx.createGain();
+          o.connect(g); g.connect(ctx.destination);
+          o.type = "square"; o.frequency.value = 880; g.gain.value = 0.15;
+          o.start(t); o.stop(t + 0.15); t += 0.22;
+        }
+        setTimeout(() => ctx.close(), times * 250 + 100);
+      } catch (_) {}
+    }
+
+    function alertBanner(data) {
+      const v = GateValidate.validateAgainstGate(data, gateConfig());
+      if (v.status === "off") return "";
+      if (v.status === "ok") {
+        return `<div class="alert alert-ok"><span class="big">✅ ผ่าน</span>
+          <span class="sub">${v.message}</span></div>`;
+      }
+      beep(3);
+      const exp = v.expected || {};
+      const sub = `ประตูเปิด: ${exp.flight || "—"}${exp.date ? " · " + exp.date : ""}`;
+      return `<div class="alert alert-bad"><span class="big">⛔ ${v.message}</span>
+        <span class="sub">${sub}</span></div>`;
+    }
+
     function render(data) {
       const L = BCBP.LABELS_TH;
-      let html = "<table>";
+      let html = alertBanner(data);
+      html += "<table>";
       for (const k of ["passengerName", "electronicTicketIndicator", "numberOfLegs"])
         html += `<tr><td class="k">${L[k]||k}</td><td class="v">${data[k] ?? "-"}</td></tr>`;
       html += "</table>";
