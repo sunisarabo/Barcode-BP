@@ -134,6 +134,20 @@
   <script src="scanner.js"></script>
   <script>
     const $ = (id) => document.getElementById(id);
+
+    // ถ้ามี JS error (เช่นไฟล์โหลดไม่ครบ/cache เก่า) ให้แสดงบนจอ ไม่ปล่อยให้ปุ่มเงียบ
+    window.addEventListener("error", (ev) => {
+      const msg = (ev && ev.message) || "เกิดข้อผิดพลาด";
+      let bar = document.getElementById("errbar");
+      if (!bar) {
+        bar = document.createElement("div");
+        bar.id = "errbar";
+        bar.style.cssText = "background:#ff6b6b;color:#111;padding:10px;font-size:.85rem;text-align:center;position:sticky;top:0;z-index:99";
+        document.body && document.body.insertBefore(bar, document.body.firstChild);
+      }
+      if (bar) bar.textContent = "⚠️ " + msg + " — ลองรีเฟรช/ล้างแคช (ปิด-เปิดแอปใหม่)";
+    });
+
     const SAMPLE = "M1DESMARAIS/LUC       EABC123 YULFRAAC 0834 226F001A0025 100";
     const yearHint = new Date().getFullYear();
 
@@ -359,16 +373,27 @@
     let stopFn = null;
 
     async function startScan() {
-      $("scanwrap").classList.add("on");
-      $("scanBtn").style.display = "none"; $("stopBtn").style.display = "block";
-      $("scanHint").textContent = Scanner.hasNative()
-        ? "จ่อบาร์โค้ด 2 มิติเข้ากล้อง..."
-        : "จ่อบาร์โค้ดเข้ากล้อง (โหมด ZXing สำหรับ iOS/Safari)...";
-      stopFn = await Scanner.startCamera(
-        $("video"),
-        (raw) => { stopScan(); gotRaw(raw); },
-        (err) => { stopScan(); $("scanHint").innerHTML = `<span class="err">${err.message}</span>`; }
-      );
+      try {
+        if (typeof Scanner === "undefined") {
+          throw new Error("โหลดตัวสแกนไม่สำเร็จ — รีเฟรชหน้า (หรือปิด-เปิดแอปใหม่)");
+        }
+        if (!window.isSecureContext) {
+          throw new Error("กล้องต้องเปิดผ่าน HTTPS หรือ localhost เท่านั้น");
+        }
+        $("scanwrap").classList.add("on");
+        $("scanBtn").style.display = "none"; $("stopBtn").style.display = "block";
+        $("scanHint").textContent = Scanner.hasNative()
+          ? "จ่อบาร์โค้ด 2 มิติเข้ากล้อง..."
+          : "จ่อบาร์โค้ดเข้ากล้อง (โหมด ZXing สำหรับ iOS/Safari)...";
+        stopFn = await Scanner.startCamera(
+          $("video"),
+          (raw) => { stopScan(); gotRaw(raw); },
+          (err) => { stopScan(); $("scanHint").innerHTML = `<span class="err">เปิดกล้องไม่สำเร็จ: ${err.message}</span>`; }
+        );
+      } catch (err) {
+        stopScan();
+        $("scanHint").innerHTML = `<span class="err">${err.message}</span>`;
+      }
     }
 
     function stopScan() {
