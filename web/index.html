@@ -123,17 +123,11 @@
       </div>
       <p class="hint" id="logEmpty">ยังไม่มีรายการ — สแกนหรือถอดบัตรเพื่อบันทึก</p>
 
-      <div class="row" style="margin-top:12px; gap:6px">
-        <input id="gsUrl" placeholder="วาง Google Apps Script Web App URL" style="flex:1; font-size:.8rem" />
-        <button id="gsSend" class="secondary" style="width:auto; padding:8px 12px; font-size:.85rem">📤 Sheet</button>
-      </div>
-      <label style="display:flex; align-items:center; gap:8px; margin-top:8px; font-size:.85rem; color:var(--fg)">
-        <input type="checkbox" id="autoSend" style="width:auto" /> ส่งเข้า Sheet อัตโนมัติ (รวมส่งทุก ~15 วินาที)
-      </label>
-      <p class="hint">ส่ง log เข้า Google Sheet — จัดแท็บ <b>ตามปี-เดือน</b> และจัดกลุ่ม <b>ตามเที่ยวบิน</b> + แท็บสรุป · หลายประตูส่งเข้า Sheet เดียวกันได้ · วิธีตั้งค่าดู <code>gas/README.md</code></p>
+      <p class="hint" id="gsStatus"></p>
     </div>
   </main>
 
+  <script src="config.js"></script>
   <script src="vendor/zxing.min.js"></script>
   <script src="bcbp.js"></script>
   <script src="validate.js"></script>
@@ -246,7 +240,7 @@
       scanLog.unshift(rec);
       saveLog();
       renderLog();
-      if ($("autoSend").checked) scheduleAutoSend();
+      scheduleAutoSend();
     }
 
     function renderLog() {
@@ -319,51 +313,42 @@
     };
     renderLog();
 
-    // ---- ส่งเข้า Google Sheet (ผ่าน Google Apps Script Web App) ----
-    const GSURL_KEY = "bp-gsheet-url", AUTOSEND_KEY = "bp-autosend";
-    $("gsUrl").value = localStorage.getItem(GSURL_KEY) || "";
-    $("autoSend").checked = localStorage.getItem(AUTOSEND_KEY) === "1";
-    $("gsUrl").addEventListener("change", () => {
-      try { localStorage.setItem(GSURL_KEY, $("gsUrl").value.trim()); } catch (_) {}
-    });
-    $("autoSend").addEventListener("change", () => {
-      try { localStorage.setItem(AUTOSEND_KEY, $("autoSend").checked ? "1" : "0"); } catch (_) {}
-      if ($("autoSend").checked) scheduleAutoSend();
-    });
+    // ---- ส่งเข้า Google Sheet อัตโนมัติ (URL ฝังไว้ใน config.js) ----
+    const SHEET_URL = (window.SHEET_URL || "").trim();
+    if (SHEET_URL) {
+      $("gsStatus").innerHTML = "☁️ ส่งเข้า Google Sheet อัตโนมัติ (จัดตามปี-เดือน-เที่ยวบิน)";
+    } else {
+      $("gsStatus").innerHTML = "การส่งเข้า Google Sheet ปิดอยู่ (ตั้งค่า SHEET_URL ใน config.js)";
+    }
 
     // POST รายการเข้า Sheet (no-cors: GAS ไม่ส่ง CORS header เขียนได้แต่อ่านผลไม่ได้)
     async function postToSheet(records) {
-      const url = $("gsUrl").value.trim();
-      if (!url || !records.length) return false;
-      await fetch(url, {
+      if (!SHEET_URL || !records.length) return;
+      await fetch(SHEET_URL, {
         method: "POST", mode: "no-cors",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify({ records }),
       });
-      return true;
     }
-
-    // ส่งทั้งหมด (ปุ่ม) — GAS กันซ้ำด้วย id อยู่แล้ว
-    $("gsSend").onclick = async () => {
-      if (!$("gsUrl").value.trim()) { alert("วาง URL ของ Google Apps Script Web App ก่อน (ดู gas/README.md)"); return; }
-      if (!scanLog.length) { alert("ยังไม่มีรายการให้ส่ง"); return; }
-      const btn = $("gsSend"); btn.disabled = true; btn.textContent = "⏳ กำลังส่ง...";
-      try { await postToSheet(scanLog); scanLog.forEach((r) => (r.sent = true)); saveLog(); btn.textContent = "✅ ส่งแล้ว"; }
-      catch (e) { btn.textContent = "❌ ผิดพลาด"; }
-      setTimeout(() => { btn.disabled = false; btn.textContent = "📤 Sheet"; }, 2500);
-    };
 
     // ส่งอัตโนมัติ: รวมรายการที่ยังไม่ส่ง แล้วยิงเป็นชุดทุก ~15 วิ (ลดภาระเมื่อหลายประตู)
     let autoTimer = null;
     function scheduleAutoSend() {
-      if (autoTimer || !$("autoSend").checked || !$("gsUrl").value.trim()) return;
-      autoTimer = setTimeout(async () => {
-        autoTimer = null;
-        const pending = scanLog.filter((r) => !r.sent);
-        if (!pending.length) return;
-        try { await postToSheet(pending); pending.forEach((r) => (r.sent = true)); saveLog(); } catch (_) {}
-      }, 15000);
+      if (autoTimer || !SHEET_URL) return;
+      autoTimer = setTimeout(flushToSheet, 15000);
     }
+    async function flushToSheet() {
+      autoTimer = null;
+      const pending = scanLog.filter((r) => !r.sent);
+      if (!pending.length) return;
+      try {
+        await postToSheet(pending);
+        pending.forEach((r) => (r.sent = true));
+        saveLog();
+      } catch (_) { /* ลองใหม่รอบหน้า */ }
+    }
+    // ส่งรายการที่ค้างอยู่ตั้งแต่เปิดแอป
+    if (SHEET_URL) scheduleAutoSend();
 
     $("parseBtn").onclick = () => doParse($("raw").value);
     $("sampleBtn").onclick = () => { $("raw").value = SAMPLE; doParse(SAMPLE); };
