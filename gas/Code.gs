@@ -11,7 +11,7 @@
  */
 
 var SPREADSHEET_NAME = "Boarding Scan Log";
-var HEADERS = ["วันที่บิน", "เวลาสแกน", "เที่ยวบิน", "ผู้โดยสาร", "ที่นั่ง", "Seq", "สถานะ", "id"];
+var HEADERS = ["วันที่บิน", "เวลาสแกน", "เที่ยวบิน", "ประตู", "ผู้โดยสาร", "ที่นั่ง", "Seq", "สถานะ", "id"];
 var SUMMARY_NAME = "สรุป";
 
 function doPost(e) {
@@ -22,7 +22,8 @@ function doPost(e) {
     var records = body.records || [];
     var ss = getSpreadsheet_();
     var res = importRecords_(ss, records);
-    buildSummary_(ss);
+    // ไม่สร้างแท็บสรุปที่นี่ — เพื่อให้ write เร็วเมื่อหลายประตู (40 เครื่อง) ยิงพร้อมกัน
+    // แท็บสรุปถูก rebuild โดย time-trigger (ดู setup) หรือเมนู "รีเฟรชสรุป"
     return json_({ ok: true, imported: res.imported, skipped: res.skipped, url: ss.getUrl() });
   } catch (err) {
     return json_({ ok: false, error: String(err) });
@@ -68,7 +69,7 @@ function importRecords_(ss, records) {
     byMonth[mk].forEach(function (r) {
       if (r.id && seen[r.id]) { skipped++; return; }
       rows.push([
-        r.date || "", fmtTime_(r.t), r.flight || "", r.name || "",
+        r.date || "", fmtTime_(r.t), r.flight || "", r.gate || "", r.name || "",
         r.seat || "", r.seq || "", statusTH_(r.status), r.id || "",
       ]);
       imported++;
@@ -134,9 +135,9 @@ function buildSummary_(ss) {
     if (!/^\d{4}-\d{2}$/.test(nm)) return;                 // เฉพาะแท็บเดือน
     var last = s.getLastRow();
     if (last < 2) return;
-    var vals = s.getRange(2, 3, last - 1, 5).getValues();  // เที่ยวบิน..สถานะ
+    var vals = s.getRange(2, 3, last - 1, 6).getValues();  // เที่ยวบิน(3)..สถานะ(8)
     vals.forEach(function (row) {
-      var flight = row[0], status = row[4];
+      var flight = row[0], status = row[5];
       var key = nm + "|" + flight;
       var a = agg[key] || (agg[key] = { y: nm.slice(0, 4), m: nm.slice(5, 7), f: flight, total: 0, ok: 0, dup: 0, bad: 0 });
       a.total++;
@@ -159,4 +160,32 @@ function buildSummary_(ss) {
 function json_(o) {
   return ContentService.createTextOutput(JSON.stringify(o))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ---------------------------------------------------------------------------
+// รองรับหลายประตูพร้อมกัน (เช่น 40 ไฟลท์): แยกการสร้างแท็บสรุปออกจาก write path
+// ---------------------------------------------------------------------------
+
+/** รันครั้งเดียว: ตั้ง time-trigger ให้ rebuild แท็บสรุปทุก 5 นาที */
+function setup() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === "scheduledSummary") ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger("scheduledSummary").timeBased().everyMinutes(5).create();
+  scheduledSummary();
+}
+
+/** ถูกเรียกโดย time-trigger */
+function scheduledSummary() {
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(30000); } catch (e) { return; }
+  try { buildSummary_(getSpreadsheet_()); } finally { lock.releaseLock(); }
+}
+
+/** เมนูใน Google Sheet สำหรับรีเฟรชสรุปเอง */
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu("Scan Log")
+    .addItem("รีเฟรชสรุป", "scheduledSummary")
+    .addToUi();
 }

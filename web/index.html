@@ -70,6 +70,7 @@
   <main>
     <div class="card" id="gateCard">
       <label>🎫 ตั้งค่าประตู (Gate) — เที่ยวบิน/วันที่ที่กำลังเปิดบอร์ด</label>
+      <input id="gateName" placeholder="ชื่อประตู/อุปกรณ์ เช่น Gate 83 หรือ DEV-01" style="margin-bottom:8px" />
       <div class="row">
         <input id="gateCarrier" placeholder="สายการบิน เช่น MU" maxlength="3" style="flex:1" />
         <input id="gateFlight" placeholder="เที่ยวบิน เช่น 727" inputmode="numeric" style="flex:1" />
@@ -136,7 +137,10 @@
         <input id="gsUrl" placeholder="วาง Google Apps Script Web App URL" style="flex:1; font-size:.8rem" />
         <button id="gsSend" class="secondary" style="width:auto; padding:8px 12px; font-size:.85rem">📤 Sheet</button>
       </div>
-      <p class="hint">ส่ง log เข้า Google Sheet — จัดแท็บ <b>ตามปี-เดือน</b> และจัดกลุ่ม <b>ตามเที่ยวบิน</b> + แท็บสรุป · วิธีตั้งค่าดู <code>gas/README.md</code></p>
+      <label style="display:flex; align-items:center; gap:8px; margin-top:8px; font-size:.85rem; color:var(--fg)">
+        <input type="checkbox" id="autoSend" style="width:auto" /> ส่งเข้า Sheet อัตโนมัติ (รวมส่งทุก ~15 วินาที)
+      </label>
+      <p class="hint">ส่ง log เข้า Google Sheet — จัดแท็บ <b>ตามปี-เดือน</b> และจัดกลุ่ม <b>ตามเที่ยวบิน</b> + แท็บสรุป · หลายประตูส่งเข้า Sheet เดียวกันได้ · วิธีตั้งค่าดู <code>gas/README.md</code></p>
     </div>
   </main>
 
@@ -153,22 +157,23 @@
     // ---- ตั้งค่าประตู (Gate) + จำค่าไว้ใน localStorage ----
     const GATE_KEY = "bp-gate-config";
     function gateConfig() {
-      return { carrier: $("gateCarrier").value, flight: $("gateFlight").value, dateISO: $("gateDate").value };
+      return { name: $("gateName").value, carrier: $("gateCarrier").value, flight: $("gateFlight").value, dateISO: $("gateDate").value };
     }
     function saveGate() { try { localStorage.setItem(GATE_KEY, JSON.stringify(gateConfig())); } catch (_) {} }
     function loadGate() {
       try {
         const c = JSON.parse(localStorage.getItem(GATE_KEY) || "{}");
+        if (c.name) $("gateName").value = c.name;
         if (c.carrier) $("gateCarrier").value = c.carrier;
         if (c.flight) $("gateFlight").value = c.flight;
         if (c.dateISO) $("gateDate").value = c.dateISO; // เว้นว่าง = ไม่ตรวจวัน
       } catch (_) {}
     }
-    ["gateCarrier", "gateFlight", "gateDate"].forEach((id) => $(id).addEventListener("change", saveGate));
+    ["gateName", "gateCarrier", "gateFlight", "gateDate"].forEach((id) => $(id).addEventListener("change", saveGate));
     $("gateToday") && ($("gateToday").onclick = () => { $("gateDate").value = new Date().toISOString().slice(0, 10); saveGate(); });
     $("gateClear").onclick = () => {
       $("gateCarrier").value = ""; $("gateFlight").value = ""; $("gateDate").value = ""; saveGate();
-    };
+    };  // ไม่ล้างชื่อประตู (คงไว้ประจำเครื่อง)
     loadGate();
 
     function beep(times) {
@@ -241,6 +246,7 @@
       const rec = {
         id: genId(),
         t: new Date().toISOString(),
+        gate: ($("gateName").value || "").trim(),
         name: data.passengerName || "-",
         flight: ((leg.operatingCarrier || "") + " " + (leg.flightNumber || "")).trim() || "-",
         date: leg.flightDate || leg.dateOfFlight || "-",
@@ -251,6 +257,7 @@
       scanLog.unshift(rec);
       saveLog();
       renderLog();
+      if ($("autoSend").checked) scheduleAutoSend();
     }
 
     function renderLog() {
@@ -324,33 +331,50 @@
     renderLog();
 
     // ---- ส่งเข้า Google Sheet (ผ่าน Google Apps Script Web App) ----
-    const GSURL_KEY = "bp-gsheet-url";
+    const GSURL_KEY = "bp-gsheet-url", AUTOSEND_KEY = "bp-autosend";
     $("gsUrl").value = localStorage.getItem(GSURL_KEY) || "";
+    $("autoSend").checked = localStorage.getItem(AUTOSEND_KEY) === "1";
     $("gsUrl").addEventListener("change", () => {
       try { localStorage.setItem(GSURL_KEY, $("gsUrl").value.trim()); } catch (_) {}
     });
-    $("gsSend").onclick = async () => {
+    $("autoSend").addEventListener("change", () => {
+      try { localStorage.setItem(AUTOSEND_KEY, $("autoSend").checked ? "1" : "0"); } catch (_) {}
+      if ($("autoSend").checked) scheduleAutoSend();
+    });
+
+    // POST รายการเข้า Sheet (no-cors: GAS ไม่ส่ง CORS header เขียนได้แต่อ่านผลไม่ได้)
+    async function postToSheet(records) {
       const url = $("gsUrl").value.trim();
-      if (!url) { alert("วาง URL ของ Google Apps Script Web App ก่อน (ดู gas/README.md)"); return; }
+      if (!url || !records.length) return false;
+      await fetch(url, {
+        method: "POST", mode: "no-cors",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ records }),
+      });
+      return true;
+    }
+
+    // ส่งทั้งหมด (ปุ่ม) — GAS กันซ้ำด้วย id อยู่แล้ว
+    $("gsSend").onclick = async () => {
+      if (!$("gsUrl").value.trim()) { alert("วาง URL ของ Google Apps Script Web App ก่อน (ดู gas/README.md)"); return; }
       if (!scanLog.length) { alert("ยังไม่มีรายการให้ส่ง"); return; }
-      // ให้ทุก record มี id (record เก่าที่ยังไม่มี)
-      scanLog = scanLog.map((r) => (r.id ? r : { ...r, id: genId() }));
-      saveLog();
-      const btn = $("gsSend");
-      btn.disabled = true; btn.textContent = "⏳ กำลังส่ง...";
-      try {
-        await fetch(url, {
-          method: "POST",
-          mode: "no-cors", // GAS ไม่ส่ง CORS header — ส่งแบบ opaque (เขียนได้ แต่อ่านผลไม่ได้)
-          headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify({ records: scanLog }),
-        });
-        btn.textContent = "✅ ส่งแล้ว";
-      } catch (e) {
-        btn.textContent = "❌ ผิดพลาด";
-      }
+      const btn = $("gsSend"); btn.disabled = true; btn.textContent = "⏳ กำลังส่ง...";
+      try { await postToSheet(scanLog); scanLog.forEach((r) => (r.sent = true)); saveLog(); btn.textContent = "✅ ส่งแล้ว"; }
+      catch (e) { btn.textContent = "❌ ผิดพลาด"; }
       setTimeout(() => { btn.disabled = false; btn.textContent = "📤 Sheet"; }, 2500);
     };
+
+    // ส่งอัตโนมัติ: รวมรายการที่ยังไม่ส่ง แล้วยิงเป็นชุดทุก ~15 วิ (ลดภาระเมื่อหลายประตู)
+    let autoTimer = null;
+    function scheduleAutoSend() {
+      if (autoTimer || !$("autoSend").checked || !$("gsUrl").value.trim()) return;
+      autoTimer = setTimeout(async () => {
+        autoTimer = null;
+        const pending = scanLog.filter((r) => !r.sent);
+        if (!pending.length) return;
+        try { await postToSheet(pending); pending.forEach((r) => (r.sent = true)); saveLog(); } catch (_) {}
+      }, 15000);
+    }
 
     $("parseBtn").onclick = () => doParse($("raw").value);
     $("sampleBtn").onclick = () => { $("raw").value = SAMPLE; doParse(SAMPLE); };
