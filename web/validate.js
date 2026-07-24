@@ -104,6 +104,89 @@
     return { status: "off" };
   }
 
-  root.GateValidate = { validateAgainstGate };
+  // ---------------------------------------------------------------------------
+  // ตรวจบัตรซ้ำ (duplicate boarding) — ที่นั่งหรือ seq ซ้ำ = บัตรถูกใช้ไปแล้ว
+  // ---------------------------------------------------------------------------
+
+  // เลือก leg ที่เกี่ยวข้อง: ถ้าตั้งประตูไว้ใช้ leg ที่ตรงเที่ยวบิน ไม่งั้นใช้ leg แรก
+  function pickLeg(parsed, cfg) {
+    const legs = (parsed && parsed.legs) || [];
+    if (!legs.length) return null;
+    const wantCarrier = normCarrier(cfg && cfg.carrier);
+    const wantFlight = normFlight(cfg && cfg.flight);
+    if (wantCarrier || wantFlight) {
+      const m = legs.find((l) =>
+        (!wantCarrier || normCarrier(l.operatingCarrier) === wantCarrier) &&
+        (!wantFlight || normFlight(l.flightNumber) === wantFlight));
+      if (m) return m;
+    }
+    return legs[0];
+  }
+
+  /**
+   * สร้างตัวติดตามบัตรที่บอร์ดแล้ว
+   * .check(parsed, cfg) - ตรวจว่าซ้ำไหม แล้วบันทึก (ถ้าไม่ซ้ำ) คืนผลลัพธ์
+   * .reset(), .size(), .toJSON()/.load() - จัดการรายการ
+   */
+  function createBoardTracker(initial) {
+    const seats = new Map();   // seatKey -> record
+    const seqs = new Map();    // seqKey  -> record
+
+    function base(leg) {
+      return normCarrier(leg.operatingCarrier) + "|" +
+             normFlight(leg.flightNumber) + "|" + (leg.dateOfFlight || "");
+    }
+
+    const api = {
+      reset() { seats.clear(); seqs.clear(); },
+      size() { return Math.max(seats.size, seqs.size); },
+      toJSON() { return { seats: [...seats], seqs: [...seqs] }; },
+      load(data) {
+        api.reset();
+        if (!data) return;
+        (data.seats || []).forEach(([k, v]) => seats.set(k, v));
+        (data.seqs || []).forEach(([k, v]) => seqs.set(k, v));
+      },
+      /** ตรวจ + บันทึก; record=false เพื่อตรวจอย่างเดียวไม่บันทึก */
+      check(parsed, cfg, record) {
+        if (record === undefined) record = true;
+        const leg = pickLeg(parsed, cfg);
+        if (!leg) return { duplicate: false };
+        const b = base(leg);
+        const seat = leg.seatNumber || null;
+        const seq = leg.checkInSequenceNumber || null;
+        const seatKey = seat ? b + "|S|" + seat : null;
+        const seqKey = seq ? b + "|Q|" + seq : null;
+        const prevSeat = seatKey ? seats.get(seatKey) : null;
+        const prevSeq = seqKey ? seqs.get(seqKey) : null;
+
+        let result = { duplicate: false, seat, seq, leg };
+        if (prevSeq && prevSeat) {
+          result = { duplicate: true, kind: "same_pass",
+            message: `บัตรนี้ถูกสแกนไปแล้ว (ที่นั่ง ${seat} · ลำดับ ${seq})`,
+            prev: prevSeq, seat, seq, leg };
+        } else if (prevSeq) {
+          result = { duplicate: true, kind: "seq",
+            message: `ลำดับเช็กอิน (seq) ${seq} ซ้ำ — เคยสแกนไปแล้ว`,
+            prev: prevSeq, seat, seq, leg };
+        } else if (prevSeat) {
+          result = { duplicate: true, kind: "seat",
+            message: `ที่นั่ง ${seat} ซ้ำ — มีบัตรอื่นใช้ที่นั่งนี้แล้ว`,
+            prev: prevSeat, seat, seq, leg };
+        }
+
+        if (record && !result.duplicate) {
+          const rec = { name: (parsed && parsed.passengerName) || null, seat, seq };
+          if (seatKey) seats.set(seatKey, rec);
+          if (seqKey) seqs.set(seqKey, rec);
+        }
+        return result;
+      },
+    };
+    if (initial) api.load(initial);
+    return api;
+  }
+
+  root.GateValidate = { validateAgainstGate, createBoardTracker, pickLeg };
   if (typeof module !== "undefined" && module.exports) module.exports = root.GateValidate;
 })(typeof self !== "undefined" ? self : this);

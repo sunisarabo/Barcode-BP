@@ -1,5 +1,5 @@
 /* service worker — แคชไฟล์แอปให้ใช้งาน offline ได้ (สำคัญสำหรับหน้า Gate/มือถือ) */
-const CACHE = "bp-reader-v5";
+const CACHE = "bp-reader-v6";
 const ASSETS = [
   "./index.html",
   "./bcbp.js",

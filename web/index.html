@@ -44,6 +44,11 @@
     .alert .big { font-size:1.35rem; display:block; margin-bottom:4px; }
     .alert .sub { font-weight:400; font-size:.85rem; opacity:.9; }
     @keyframes blink { 50% { opacity:.45 } }
+    #logTable { font-size:.82rem; white-space:nowrap; }
+    #logTable td { padding:6px 8px; }
+    #logTable .loghead td { color:var(--mut); font-weight:600; border-bottom:1px solid #2a3a48; }
+    #logTable .logbad { color:var(--err); font-weight:700; }
+    #logTable .logok { color:var(--acc); font-weight:700; }
     label { display:block; font-size:.8rem; color:var(--mut); margin:0 0 6px; }
     table { width:100%; border-collapse:collapse; font-size:.9rem; }
     td { padding:6px 4px; border-bottom:1px solid #22303c; vertical-align:top; }
@@ -71,6 +76,7 @@
       </div>
       <div class="row" style="margin-top:8px">
         <input id="gateDate" type="date" style="flex:1" />
+        <button id="gateToday" class="secondary" style="flex:0 0 auto; width:auto; padding:12px 14px">วันนี้</button>
         <button id="gateClear" class="secondary" style="flex:0 0 auto; width:auto; padding:12px 14px">ล้าง</button>
       </div>
       <p class="hint">ตั้งไว้แล้วระบบจะ <b>เตือนสีแดง + เสียง</b> ถ้าสแกนบัตรที่ผิดเที่ยวบินหรือผิดวัน · เว้นว่าง = ไม่ตรวจ</p>
@@ -112,6 +118,20 @@
     <div class="card" id="resultCard" style="display:none">
       <div id="result"></div>
     </div>
+
+    <div class="card" id="logCard">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px">
+        <label style="margin:0">📋 รายการที่สแกนแล้ว (<span id="logCount">0</span>)</label>
+        <div style="display:flex; gap:6px">
+          <button id="csvBtn" class="secondary" style="width:auto; padding:8px 12px; font-size:.85rem">⬇️ CSV</button>
+          <button id="logClear" class="secondary" style="width:auto; padding:8px 12px; font-size:.85rem">🗑️ ล้าง</button>
+        </div>
+      </div>
+      <div id="logWrap" style="overflow-x:auto; margin-top:10px">
+        <table id="logTable"><tbody></tbody></table>
+      </div>
+      <p class="hint" id="logEmpty">ยังไม่มีรายการ — สแกนหรือถอดบัตรเพื่อบันทึก</p>
+    </div>
   </main>
 
   <script src="vendor/zxing.min.js"></script>
@@ -135,13 +155,13 @@
         const c = JSON.parse(localStorage.getItem(GATE_KEY) || "{}");
         if (c.carrier) $("gateCarrier").value = c.carrier;
         if (c.flight) $("gateFlight").value = c.flight;
-        $("gateDate").value = c.dateISO || new Date().toISOString().slice(0, 10);
-      } catch (_) { $("gateDate").value = new Date().toISOString().slice(0, 10); }
+        if (c.dateISO) $("gateDate").value = c.dateISO; // เว้นว่าง = ไม่ตรวจวัน
+      } catch (_) {}
     }
     ["gateCarrier", "gateFlight", "gateDate"].forEach((id) => $(id).addEventListener("change", saveGate));
+    $("gateToday") && ($("gateToday").onclick = () => { $("gateDate").value = new Date().toISOString().slice(0, 10); saveGate(); });
     $("gateClear").onclick = () => {
-      $("gateCarrier").value = ""; $("gateFlight").value = "";
-      $("gateDate").value = new Date().toISOString().slice(0, 10); saveGate();
+      $("gateCarrier").value = ""; $("gateFlight").value = ""; $("gateDate").value = ""; saveGate();
     };
     loadGate();
 
@@ -159,23 +179,84 @@
       } catch (_) {}
     }
 
-    function alertBanner(data) {
-      const v = GateValidate.validateAgainstGate(data, gateConfig());
-      if (v.status === "off") return "";
-      if (v.status === "ok") {
-        return `<div class="alert alert-ok"><span class="big">✅ ผ่าน</span>
-          <span class="sub">${v.message}</span></div>`;
+    // ---- ตัวติดตามบัตรซ้ำ + log รายการที่สแกน (เก็บใน localStorage) ----
+    const TRACKER_KEY = "bp-board-tracker", LOG_KEY = "bp-scan-log";
+    const tracker = GateValidate.createBoardTracker(loadJSON(TRACKER_KEY));
+    let scanLog = loadJSON(LOG_KEY) || [];
+    function loadJSON(k) { try { return JSON.parse(localStorage.getItem(k) || "null"); } catch (_) { return null; } }
+    function saveTracker() { try { localStorage.setItem(TRACKER_KEY, JSON.stringify(tracker.toJSON())); } catch (_) {} }
+    function saveLog() { try { localStorage.setItem(LOG_KEY, JSON.stringify(scanLog)); } catch (_) {} }
+
+    const STATUS_TH = {
+      ok: "✅ ผ่าน", recorded: "✅ บันทึก", duplicate: "⛔ ซ้ำ",
+      wrong_flight: "⛔ ผิดเที่ยวบิน", wrong_date: "⛔ ผิดวัน",
+    };
+
+    // ประเมินผลการสแกน: ตรวจประตู → ตรวจซ้ำ → คืน alert + สถานะสำหรับ log
+    function evaluateScan(data) {
+      const cfg = gateConfig();
+      const gv = GateValidate.validateAgainstGate(data, cfg);
+
+      // ผิดเที่ยวบิน/ผิดวัน → เตือนแดง ไม่บันทึกเป็นผู้โดยสารที่บอร์ด
+      if (gv.status === "wrong_flight" || gv.status === "wrong_date") {
+        beep(3);
+        const exp = gv.expected || {};
+        const sub = `ประตูเปิด: ${exp.flight || "—"}${exp.date ? " · " + exp.date : ""}`;
+        return { status: gv.status,
+          html: `<div class="alert alert-bad"><span class="big">⛔ ${gv.message}</span><span class="sub">${sub}</span></div>` };
       }
-      beep(3);
-      const exp = v.expected || {};
-      const sub = `ประตูเปิด: ${exp.flight || "—"}${exp.date ? " · " + exp.date : ""}`;
-      return `<div class="alert alert-bad"><span class="big">⛔ ${v.message}</span>
-        <span class="sub">${sub}</span></div>`;
+
+      // ตรวจบัตรซ้ำ (ที่นั่ง/seq)
+      const dup = tracker.check(data, cfg); // บันทึกให้ถ้าไม่ซ้ำ
+      if (dup.duplicate) {
+        beep(3);
+        const p = dup.prev || {};
+        const sub = p.name ? `เคยสแกน: ${p.name}` : "";
+        return { status: "duplicate",
+          html: `<div class="alert alert-bad"><span class="big">⛔ บัตรซ้ำ!</span><span class="sub">${dup.message}${sub ? " · " + sub : ""}</span></div>` };
+      }
+      saveTracker();
+
+      // ผ่าน
+      if (gv.status === "ok")
+        return { status: "ok",
+          html: `<div class="alert alert-ok"><span class="big">✅ ผ่าน</span><span class="sub">${gv.message}</span></div>` };
+      return { status: "recorded",
+        html: `<div class="alert alert-ok"><span class="big">✅ บันทึกแล้ว</span><span class="sub">ไม่ได้ตั้งประตูตรวจเที่ยวบิน/วัน — บันทึกรายการอย่างเดียว</span></div>` };
     }
 
-    function render(data) {
+    function appendLog(data, status) {
+      const leg = GateValidate.pickLeg(data, gateConfig()) || (data.legs || [])[0] || {};
+      const rec = {
+        t: new Date().toISOString(),
+        name: data.passengerName || "-",
+        flight: ((leg.operatingCarrier || "") + " " + (leg.flightNumber || "")).trim() || "-",
+        date: leg.flightDate || leg.dateOfFlight || "-",
+        seat: leg.seatNumber || "-",
+        seq: leg.checkInSequenceNumber || "-",
+        status,
+      };
+      scanLog.unshift(rec);
+      saveLog();
+      renderLog();
+    }
+
+    function renderLog() {
+      $("logCount").textContent = scanLog.length;
+      $("logEmpty").style.display = scanLog.length ? "none" : "block";
+      const rows = scanLog.slice(0, 100).map((r) => {
+        const badClass = /⛔/.test(STATUS_TH[r.status] || "") ? "logbad" : "logok";
+        const time = new Date(r.t).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+        return `<tr><td>${time}</td><td>${r.name}</td><td>${r.flight}</td><td>${r.seat}</td><td>${r.seq}</td>
+          <td class="${badClass}">${STATUS_TH[r.status] || r.status}</td></tr>`;
+      }).join("");
+      $("logTable").querySelector("tbody").innerHTML =
+        `<tr class="loghead"><td>เวลา</td><td>ชื่อ</td><td>เที่ยวบิน</td><td>ที่นั่ง</td><td>seq</td><td>สถานะ</td></tr>` + rows;
+    }
+
+    function render(data, evalu) {
       const L = BCBP.LABELS_TH;
-      let html = alertBanner(data);
+      let html = evalu.html || "";
       html += "<table>";
       for (const k of ["passengerName", "electronicTicketIndicator", "numberOfLegs"])
         html += `<tr><td class="k">${L[k]||k}</td><td class="v">${data[k] ?? "-"}</td></tr>`;
@@ -194,13 +275,41 @@
     }
 
     function doParse(raw) {
+      let data;
       try {
-        render(BCBP.parse(raw.trim(), { yearHint }));
+        data = BCBP.parse(raw.trim(), { yearHint });
       } catch (e) {
         $("result").innerHTML = `<div class="err">อ่านไม่สำเร็จ: ${e.message}</div>`;
         $("resultCard").style.display = "block";
+        return;
       }
+      const evalu = evaluateScan(data);
+      render(data, evalu);
+      appendLog(data, evalu.status);
     }
+
+    // ---- ปุ่ม CSV / ล้างรายการ ----
+    function toCSV() {
+      const head = ["time", "name", "flight", "date", "seat", "seq", "status"];
+      const esc = (s) => `"${String(s).replace(/"/g, '""')}"`;
+      const lines = [head.join(",")].concat(
+        scanLog.map((r) => [r.t, r.name, r.flight, r.date, r.seat, r.seq, r.status].map(esc).join(",")));
+      return lines.join("\n");
+    }
+    $("csvBtn").onclick = () => {
+      if (!scanLog.length) return;
+      const blob = new Blob(["﻿" + toCSV()], { type: "text/csv;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "scan-log.csv";
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    };
+    $("logClear").onclick = () => {
+      if (!confirm("ล้างรายการที่สแกนทั้งหมด และรีเซ็ตการตรวจซ้ำ?")) return;
+      scanLog = []; tracker.reset(); saveLog(); saveTracker(); renderLog();
+    };
+    renderLog();
 
     $("parseBtn").onclick = () => doParse($("raw").value);
     $("sampleBtn").onclick = () => { $("raw").value = SAMPLE; doParse(SAMPLE); };
