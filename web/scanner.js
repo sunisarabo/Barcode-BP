@@ -117,12 +117,22 @@
    * เปิดกล้องสแกนต่อเนื่อง
    * @returns ฟังก์ชัน stop() ไว้ปิดกล้อง
    */
+  // ขอกล้องหลัง + ความละเอียดสูง (ช่วยอ่าน PDF417 บนกระดาษที่เส้นถี่)
+  const CAMERA_CONSTRAINTS = {
+    video: {
+      facingMode: { ideal: "environment" },
+      width: { ideal: 1920 },
+      height: { ideal: 1080 },
+    },
+    audio: false,
+  };
+
   async function startCamera(videoEl, onResult, onError) {
     // ทาง 1: BarcodeDetector + จัดการ stream เอง
     if (hasNative()) {
       let stream, raf, active = true;
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        stream = await navigator.mediaDevices.getUserMedia(CAMERA_CONSTRAINTS);
       } catch (e) { onError(e); return () => {}; }
       videoEl.srcObject = stream;
       await videoEl.play();
@@ -139,11 +149,11 @@
       return () => { active = false; if (raf) cancelAnimationFrame(raf); stream.getTracks().forEach((t) => t.stop()); };
     }
 
-    // ทาง 2: ZXing (iOS/Safari) — จัดการ stream ให้เอง
+    // ทาง 2: ZXing (iOS/Safari) — ใช้ decodeFromConstraints เพื่อบังคับกล้องหลัง+ความละเอียด
     if (hasZXing()) {
       const reader = zxingReader();
       try {
-        await reader.decodeFromVideoDevice(undefined, videoEl, (result) => {
+        await reader.decodeFromConstraints(CAMERA_CONSTRAINTS, videoEl, (result) => {
           if (result) onResult(result.getText());
         });
       } catch (e) { onError(e); return () => {}; }

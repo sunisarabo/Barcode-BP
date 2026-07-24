@@ -25,7 +25,14 @@
     .col { display:flex; flex-direction:column; gap:8px; }
     #sampleBarcode img, #sampleBarcode canvas { width:200px; height:200px; image-rendering:pixelated;
             border:6px solid #fff; border-radius:8px; background:#fff; }
-    #video { width:100%; border-radius:10px; background:#000; display:none; aspect-ratio:4/3; object-fit:cover; }
+    .scanwrap { position:relative; display:none; }
+    .scanwrap.on { display:block; }
+    #video { width:100%; border-radius:10px; background:#000; aspect-ratio:4/3; object-fit:cover; display:block; }
+    .scanframe { position:absolute; inset:14% 8%; border:3px solid var(--acc); border-radius:12px;
+                 box-shadow:0 0 0 100vmax rgba(0,0,0,.25); pointer-events:none; }
+    .scanframe::after { content:""; position:absolute; left:0; right:0; top:50%; height:2px;
+                        background:var(--acc); opacity:.8; animation:scanline 1.8s ease-in-out infinite; }
+    @keyframes scanline { 0%,100%{transform:translateY(-42px)} 50%{transform:translateY(42px)} }
     textarea { width:100%; min-height:64px; background:#0b131b; color:var(--fg);
                border:1px solid #24313d; border-radius:10px; padding:10px; font-family:monospace; }
     label { display:block; font-size:.8rem; color:var(--mut); margin:0 0 6px; }
@@ -52,7 +59,10 @@
         <button id="scanBtn">📷 สแกนด้วยกล้อง</button>
         <button id="stopBtn" class="secondary" style="display:none">หยุด</button>
       </div>
-      <video id="video" playsinline></video>
+      <div class="scanwrap" id="scanwrap">
+        <video id="video" playsinline muted></video>
+        <div class="scanframe"></div>
+      </div>
       <div class="row" style="margin-top:8px">
         <button id="fileBtn" class="secondary">🖼️ อัปโหลดไฟล์รูป / PDF</button>
       </div>
@@ -151,7 +161,7 @@
     let stopFn = null;
 
     async function startScan() {
-      $("video").style.display = "block";
+      $("scanwrap").classList.add("on");
       $("scanBtn").style.display = "none"; $("stopBtn").style.display = "block";
       $("scanHint").textContent = Scanner.hasNative()
         ? "จ่อบาร์โค้ด 2 มิติเข้ากล้อง..."
@@ -165,7 +175,7 @@
 
     function stopScan() {
       if (stopFn) { stopFn(); stopFn = null; }
-      $("video").style.display = "none";
+      $("scanwrap").classList.remove("on");
       $("scanBtn").style.display = "block"; $("stopBtn").style.display = "none";
       $("scanHint").textContent = "";
     }
