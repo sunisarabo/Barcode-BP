@@ -1,5 +1,5 @@
 /* service worker — แคชไฟล์แอปให้ใช้งาน offline ได้ (สำคัญสำหรับหน้า Gate/มือถือ) */
-const CACHE = "bp-reader-v10";
+const CACHE = "bp-reader-v11";
 const ASSETS = [
   "./index.html",
   "./config.js",
@@ -27,8 +27,26 @@ self.addEventListener("activate", (e) => {
 });
 
 self.addEventListener("fetch", (e) => {
-  if (e.request.method !== "GET") return;
-  e.respondWith(
-    caches.match(e.request).then((hit) => hit || fetch(e.request))
-  );
+  const req = e.request;
+  if (req.method !== "GET") return;
+
+  // หน้า HTML (navigation): network-first เพื่อให้ได้เวอร์ชันล่าสุดเสมอ
+  // (กัน cache เก่าค้างจนปุ่มไม่ทำงานหลังอัปเดต) — offline ค่อย fallback ไป cache
+  const isHTML = req.mode === "navigate" ||
+    (req.headers.get("accept") || "").includes("text/html");
+  if (isHTML) {
+    e.respondWith(
+      fetch(req)
+        .then((res) => {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put("./index.html", copy));
+          return res;
+        })
+        .catch(() => caches.match(req).then((hit) => hit || caches.match("./index.html")))
+    );
+    return;
+  }
+
+  // ไฟล์อื่น (JS/รูป/ไลบรารี): cache-first เพื่อความเร็ว/ออฟไลน์
+  e.respondWith(caches.match(req).then((hit) => hit || fetch(req)));
 });
