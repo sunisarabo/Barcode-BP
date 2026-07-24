@@ -126,6 +126,8 @@ web/                     # เว็บแอป / PWA (Gate PC + มือถ�
 ports/                   # พอร์ต parser ภาษาอื่น (+ unit test)
   csharp/BcbpParser.cs,  csharp/BcbpParserTest.cs
   java/BcbpParser.java,  java/BcbpParserTest.java
+gas/                     # Google Apps Script — ส่ง scan log เข้า Google Sheet
+  Code.gs, appsscript.json, README.md   (จัดตามปี-เดือน + เที่ยวบิน + สรุป)
 INTEGRATION.md           # สถาปัตยกรรมการเชื่อมกับระบบเช็กอิน (DCS)
 ```
 

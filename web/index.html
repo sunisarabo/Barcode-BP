@@ -131,6 +131,12 @@
         <table id="logTable"><tbody></tbody></table>
       </div>
       <p class="hint" id="logEmpty">ยังไม่มีรายการ — สแกนหรือถอดบัตรเพื่อบันทึก</p>
+
+      <div class="row" style="margin-top:12px; gap:6px">
+        <input id="gsUrl" placeholder="วาง Google Apps Script Web App URL" style="flex:1; font-size:.8rem" />
+        <button id="gsSend" class="secondary" style="width:auto; padding:8px 12px; font-size:.85rem">📤 Sheet</button>
+      </div>
+      <p class="hint">ส่ง log เข้า Google Sheet — จัดแท็บ <b>ตามปี-เดือน</b> และจัดกลุ่ม <b>ตามเที่ยวบิน</b> + แท็บสรุป · วิธีตั้งค่าดู <code>gas/README.md</code></p>
     </div>
   </main>
 
@@ -225,9 +231,15 @@
         html: `<div class="alert alert-ok"><span class="big">✅ บันทึกแล้ว</span><span class="sub">ไม่ได้ตั้งประตูตรวจเที่ยวบิน/วัน — บันทึกรายการอย่างเดียว</span></div>` };
     }
 
+    function genId() {
+      try { if (crypto && crypto.randomUUID) return crypto.randomUUID(); } catch (_) {}
+      return Date.now() + "-" + Math.floor(Math.random() * 1e9);
+    }
+
     function appendLog(data, status) {
       const leg = GateValidate.pickLeg(data, gateConfig()) || (data.legs || [])[0] || {};
       const rec = {
+        id: genId(),
         t: new Date().toISOString(),
         name: data.passengerName || "-",
         flight: ((leg.operatingCarrier || "") + " " + (leg.flightNumber || "")).trim() || "-",
@@ -310,6 +322,35 @@
       scanLog = []; tracker.reset(); saveLog(); saveTracker(); renderLog();
     };
     renderLog();
+
+    // ---- ส่งเข้า Google Sheet (ผ่าน Google Apps Script Web App) ----
+    const GSURL_KEY = "bp-gsheet-url";
+    $("gsUrl").value = localStorage.getItem(GSURL_KEY) || "";
+    $("gsUrl").addEventListener("change", () => {
+      try { localStorage.setItem(GSURL_KEY, $("gsUrl").value.trim()); } catch (_) {}
+    });
+    $("gsSend").onclick = async () => {
+      const url = $("gsUrl").value.trim();
+      if (!url) { alert("วาง URL ของ Google Apps Script Web App ก่อน (ดู gas/README.md)"); return; }
+      if (!scanLog.length) { alert("ยังไม่มีรายการให้ส่ง"); return; }
+      // ให้ทุก record มี id (record เก่าที่ยังไม่มี)
+      scanLog = scanLog.map((r) => (r.id ? r : { ...r, id: genId() }));
+      saveLog();
+      const btn = $("gsSend");
+      btn.disabled = true; btn.textContent = "⏳ กำลังส่ง...";
+      try {
+        await fetch(url, {
+          method: "POST",
+          mode: "no-cors", // GAS ไม่ส่ง CORS header — ส่งแบบ opaque (เขียนได้ แต่อ่านผลไม่ได้)
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({ records: scanLog }),
+        });
+        btn.textContent = "✅ ส่งแล้ว";
+      } catch (e) {
+        btn.textContent = "❌ ผิดพลาด";
+      }
+      setTimeout(() => { btn.disabled = false; btn.textContent = "📤 Sheet"; }, 2500);
+    };
 
     $("parseBtn").onclick = () => doParse($("raw").value);
     $("sampleBtn").onclick = () => { $("raw").value = SAMPLE; doParse(SAMPLE); };
