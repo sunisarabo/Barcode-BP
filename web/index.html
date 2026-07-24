@@ -22,6 +22,9 @@
     button.secondary { background:#2a3a48; color:var(--fg); }
     button:active { transform:translateY(1px); }
     .row { display:flex; gap:8px; }
+    .col { display:flex; flex-direction:column; gap:8px; }
+    #sampleBarcode img, #sampleBarcode canvas { width:200px; height:200px; image-rendering:pixelated;
+            border:6px solid #fff; border-radius:8px; background:#fff; }
     #video { width:100%; border-radius:10px; background:#000; display:none; aspect-ratio:4/3; object-fit:cover; }
     textarea { width:100%; min-height:64px; background:#0b131b; color:var(--fg);
                border:1px solid #24313d; border-radius:10px; padding:10px; font-family:monospace; }
@@ -58,6 +61,14 @@
     </div>
 
     <div class="card">
+      <label>🧪 ทดสอบด้วยตัวอย่าง (สร้างบาร์โค้ดจำลอง แล้วถอดผ่าน pipeline จริง)</label>
+      <div id="sampleBtns" class="col"></div>
+      <div id="sampleBarcode" style="text-align:center; margin-top:10px"></div>
+      <p class="hint">สร้างบาร์โค้ด QR จากข้อมูลจำลอง → ถอดด้วย ZXing → parse (สาธิตครบวงจร)
+        · บัตรกระดาษจริงเป็น PDF417 ซึ่งแอปก็อ่านได้ ลองอัปโหลดรูปบัตรจริงด้านบน</p>
+    </div>
+
+    <div class="card">
       <label for="raw">หรือวางข้อความดิบ (raw string) จากบาร์โค้ด</label>
       <textarea id="raw" placeholder="M1DESMARAIS/LUC       EABC123 YULFRAAC 0834 226F001A0025 100"></textarea>
       <div class="row" style="margin-top:8px">
@@ -74,6 +85,7 @@
   <script src="vendor/zxing.min.js"></script>
   <script src="bcbp.js"></script>
   <script src="scanner.js"></script>
+  <script src="samples.js"></script>
   <script>
     const $ = (id) => document.getElementById(id);
     const SAMPLE = "M1DESMARAIS/LUC       EABC123 YULFRAAC 0834 226F001A0025 100";
@@ -111,6 +123,29 @@
     $("sampleBtn").onclick = () => { $("raw").value = SAMPLE; doParse(SAMPLE); };
 
     function gotRaw(raw) { $("raw").value = raw; doParse(raw); }
+
+    // ---- ปุ่มทดสอบด้วยตัวอย่าง: สร้างบาร์โค้ด → ถอดผ่าน pipeline จริง ----
+    Samples.list.forEach((s) => {
+      const btn = document.createElement("button");
+      btn.className = "secondary";
+      btn.textContent = "🎫 " + s.label;
+      btn.onclick = async () => {
+        // 1) สร้างบาร์โค้ดจากข้อมูลจำลอง แล้วแสดงให้เห็น
+        const canvas = Samples.makeBarcodeCanvas(s.raw);
+        const box = $("sampleBarcode");
+        box.innerHTML = `<div class="hint" style="margin-bottom:6px">${s.note}</div>`;
+        box.appendChild(canvas);
+        // 2) ถอดกลับผ่านตัวถอดภาพจริง (ไม่ใช่แค่ parse ข้อความ)
+        try {
+          const raw = await Scanner.decodeFromElement(canvas);
+          gotRaw(raw);
+        } catch (err) {
+          $("result").innerHTML = `<div class="err">ถอดตัวอย่างไม่สำเร็จ: ${err.message}</div>`;
+          $("resultCard").style.display = "block";
+        }
+      };
+      $("sampleBtns").appendChild(btn);
+    });
 
     // ---- สแกนด้วยกล้อง (Scanner เลือก BarcodeDetector หรือ ZXing ให้อัตโนมัติ) ----
     let stopFn = null;
