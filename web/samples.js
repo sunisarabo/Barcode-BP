@@ -13,11 +13,6 @@
 
   const SAMPLES = [
     {
-      label: "TONGGAMKAEW/USUPHON — MU727 → NRT",
-      note: "เที่ยวบิน MU727 ปลายทาง NRT (โตเกียว) · mock",
-      raw: "M1TONGGAMKAEW/USUPHON ER2D3E4 PVGNRTMU 727  059R052B158  100",
-    },
-    {
       label: "BOONYOUNG/SUNISARA — E9696 → CDG",
       note: "เที่ยวบิน E9696 ปลายทาง CDG (ปารีส) · mock",
       raw: "M1BOONYOUNG/SUNISARA  EAB12CD HKTCDGE9 696  068Y014A001  100",
