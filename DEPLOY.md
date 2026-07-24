@@ -4,23 +4,25 @@
 ดังนั้นถ้าเปิดไฟล์แบบ `file://` หรือเปิดผ่าน `http://<ไอพี>` บนมือถือ กล้องจะไม่ทำงาน
 วิธีที่ง่ายที่สุดคือ deploy ขึ้น **GitHub Pages** ซึ่งได้ HTTPS ให้อัตโนมัติ
 
-## ขั้นตอน (ทำครั้งเดียว)
+## ขั้นตอน
 
-1. เปิดหน้า repo บน GitHub → **Settings** → **Pages**
-2. ที่ **Build and deployment → Source** เลือก **GitHub Actions**
-3. เมื่อ merge/มี `main` แล้ว (หรือ push เข้า branch ที่ตั้งไว้) เวิร์กโฟลว์
-   [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml)
-   จะ deploy โฟลเดอร์ `web/` ให้อัตโนมัติ
-4. รอ Action เสร็จ แล้วเปิด URL ที่ได้ (รูปแบบ):
+เวิร์กโฟลว์ [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml)
+ตั้ง `enablement: true` ไว้แล้ว → มัน **เปิดใช้ Pages ให้อัตโนมัติ** ผ่าน token
+ของ workflow ไม่ต้องเข้าไปตั้งค่าใน Settings เอง
+
+1. push เข้า `main` (หรือ branch พัฒนา) หรือกดรันเอง
+   (**Actions → Deploy web app to GitHub Pages → Run workflow**)
+2. รอ Action เสร็จ แล้วเปิด URL ที่ได้:
 
    ```
    https://sunisarabo.github.io/Barcode-BP/
    ```
 
-5. เปิด URL นั้นบน **มือถือ** → กด "📷 สแกนด้วยกล้อง" → อนุญาตกล้อง → สแกนได้เลย
+3. เปิด URL นั้นบน **มือถือ** → กด "📷 สแกนด้วยกล้อง" → อนุญาตกล้อง → สแกนได้เลย
 
-> เวิร์กโฟลว์ตั้งค่าให้ทำงานเมื่อ push เข้า `main` หรือ branch พัฒนา และกดรันเองได้
-> (**Actions → Deploy web app to GitHub Pages → Run workflow**)
+> **ถ้า `enablement: true` ยังไม่พอ** (บางบัญชี/องค์กรบล็อกการเปิด Pages ผ่าน API)
+> ให้เปิดเอง: **Settings → Pages → Build and deployment → Source = GitHub Actions**
+> แล้วรัน Action ใหม่
 
 ## รันเองก่อน deploy จริง
 

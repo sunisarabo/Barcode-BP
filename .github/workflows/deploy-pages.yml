@@ -36,6 +36,9 @@ jobs:
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
+        with:
+          # เปิดใช้ Pages อัตโนมัติผ่าน token ของ workflow (ไม่ต้องตั้งค่าเองใน Settings)
+          enablement: true
 
       - name: Upload web/ as Pages artifact
         uses: actions/upload-pages-artifact@v3
