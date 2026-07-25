@@ -67,8 +67,8 @@
 
   <main>
     <div class="card" id="gateCard">
-      <label>🎫 ตั้งค่าประตู (Gate) — เที่ยวบิน/วันที่ที่กำลังเปิดบอร์ด</label>
-      <input id="gateName" placeholder="ชื่อประตู/อุปกรณ์ เช่น Gate 83 หรือ DEV-01" style="margin-bottom:8px" />
+      <label>🎫 ตั้งค่าประตู (Gate) — เลขเกท/เที่ยวบิน/วันที่ที่กำลังเปิดบอร์ด</label>
+      <input id="gateName" placeholder="เลขเกท เช่น 83 หรือ Gate 83" style="margin-bottom:8px" />
       <div class="row">
         <input id="gateCarrier" placeholder="สายการบิน เช่น MU" maxlength="3" style="flex:1" />
         <input id="gateFlight" placeholder="เที่ยวบิน เช่น 727" inputmode="numeric" style="flex:1" />
@@ -78,7 +78,8 @@
         <button id="gateToday" class="secondary" style="flex:0 0 auto; width:auto; padding:12px 14px">วันนี้</button>
         <button id="gateClear" class="secondary" style="flex:0 0 auto; width:auto; padding:12px 14px">ล้าง</button>
       </div>
-      <p class="hint">ตั้งไว้แล้วระบบจะ <b>เตือนสีแดง + เสียง</b> ถ้าสแกนบัตรที่ผิดเที่ยวบินหรือผิดวัน · เว้นว่าง = ไม่ตรวจ</p>
+      <p class="hint">ตั้งไว้แล้วระบบจะ <b>เตือนสีแดง + เสียง</b> ถ้าสแกนบัตรผิดเที่ยวบิน/ผิดวัน และแสดง <b>เลขเกท</b> บนผลทุกครั้ง · เว้นว่าง = ไม่ตรวจ<br>
+      <i>หมายเหตุ: บาร์โค้ดไม่ได้เก็บเลขเกท — การตรวจเที่ยวบินคือการกันผู้โดยสารมาผิดเกทโดยปริยาย (1 เกท = 1 เที่ยวบิน)</i></p>
     </div>
 
     <div class="card">
@@ -95,6 +96,19 @@
       </div>
       <input id="fileInput" type="file" accept="image/*,application/pdf,.pdf" hidden />
       <p class="hint" id="scanHint"></p>
+    </div>
+
+    <div class="card" id="hwCard">
+      <label>⌨️ โหมดเครื่องสแกน (Hardware) — เร็วสุดสำหรับหน้า Gate</label>
+      <input id="hwInput" placeholder="แตะที่นี่ แล้วยิงบาร์โค้ด (เครื่องพิมพ์+Enter เอง)"
+             autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="none" />
+      <div class="row" style="margin-top:8px; align-items:center">
+        <button id="hwFocus" class="secondary" style="width:auto; padding:10px 14px">🎯 โฟกัสช่องสแกน</button>
+        <label style="display:flex; align-items:center; gap:6px; font-size:.85rem; color:var(--fg)">
+          <input type="checkbox" id="hwKeepFocus" checked style="width:auto" /> โฟกัสค้าง (สแกนต่อเนื่อง)
+        </label>
+      </div>
+      <p class="hint" id="hwHint">ใช้กับเครื่องสแกน 2D แบบ USB/Bluetooth (keyboard-wedge) — ตั้งค่าเครื่องให้ส่ง <b>Enter</b> ท้ายบาร์โค้ด · ยิงแล้วถอดรหัสทันที</p>
     </div>
 
     <div class="card">
@@ -204,6 +218,8 @@
     function evaluateScan(data) {
       const cfg = gateConfig();
       const gv = GateValidate.validateAgainstGate(data, cfg);
+      const gate = (cfg.name || "").trim();
+      const gateTag = gate ? `<b>เกท ${gate}</b> · ` : "";  // แสดงเลขเกทเด่นทุกแถบ
 
       // ผิดเที่ยวบิน/ผิดวัน → เตือนแดง ไม่บันทึกเป็นผู้โดยสารที่บอร์ด
       if (gv.status === "wrong_flight" || gv.status === "wrong_date") {
@@ -211,7 +227,7 @@
         const exp = gv.expected || {};
         const sub = `ประตูเปิด: ${exp.flight || "—"}${exp.date ? " · " + exp.date : ""}`;
         return { status: gv.status,
-          html: `<div class="alert alert-bad"><span class="big">⛔ ${gv.message}</span><span class="sub">${sub}</span></div>` };
+          html: `<div class="alert alert-bad"><span class="big">⛔ ${gv.message}</span><span class="sub">${gateTag}${sub}</span></div>` };
       }
 
       // ตรวจบัตรซ้ำ (ที่นั่ง/seq)
@@ -221,16 +237,19 @@
         const p = dup.prev || {};
         const sub = p.name ? `เคยสแกน: ${p.name}` : "";
         return { status: "duplicate",
-          html: `<div class="alert alert-bad"><span class="big">⛔ บัตรซ้ำ!</span><span class="sub">${dup.message}${sub ? " · " + sub : ""}</span></div>` };
+          html: `<div class="alert alert-bad"><span class="big">⛔ บัตรซ้ำ!</span><span class="sub">${gateTag}${dup.message}${sub ? " · " + sub : ""}</span></div>` };
       }
       saveTracker();
 
-      // ผ่าน
-      if (gv.status === "ok")
+      // ผ่าน — โชว์เลขเกท + เที่ยวบินให้เจ้าหน้าที่ยืนยัน
+      if (gv.status === "ok") {
+        const exp = gv.expected || {};
+        const line = `${gateTag}${exp.flight || ""}${exp.date ? " · " + exp.date : ""}`.trim();
         return { status: "ok",
-          html: `<div class="alert alert-ok"><span class="big">✅ ผ่าน</span><span class="sub">${gv.message}</span></div>` };
+          html: `<div class="alert alert-ok"><span class="big">✅ ผ่าน</span><span class="sub">${line || gv.message}</span></div>` };
+      }
       return { status: "recorded",
-        html: `<div class="alert alert-ok"><span class="big">✅ บันทึกแล้ว</span><span class="sub">ไม่ได้ตั้งประตูตรวจเที่ยวบิน/วัน — บันทึกรายการอย่างเดียว</span></div>` };
+        html: `<div class="alert alert-ok"><span class="big">✅ บันทึกแล้ว</span><span class="sub">${gateTag}ยังไม่ได้ตั้งเที่ยวบิน/วันตรวจ — บันทึกอย่างเดียว</span></div>` };
     }
 
     function genId() {
@@ -420,6 +439,27 @@
       }
       e.target.value = "";
     };
+
+    // ---- โหมดเครื่องสแกน hardware (keyboard-wedge: พิมพ์ค่า + Enter) ----
+    const hwInput = $("hwInput");
+    hwInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {              // เครื่องสแกนส่ง Enter ท้ายบาร์โค้ด
+        e.preventDefault();
+        const v = hwInput.value.trim();
+        hwInput.value = "";
+        if (v) gotRaw(v);                   // ถอดรหัส + ตรวจ + log + ส่ง Sheet (pipeline เดียวกัน)
+        if ($("hwKeepFocus").checked) hwInput.focus();
+      }
+    });
+    $("hwFocus").onclick = () => hwInput.focus();
+    // ดึงโฟกัสกลับเมื่อโฟกัสหลุดไปที่ว่าง (ไม่แย่งตอนผู้ใช้กดช่อง/ปุ่มอื่น)
+    hwInput.addEventListener("blur", () => {
+      if (!$("hwKeepFocus").checked) return;
+      setTimeout(() => {
+        const a = document.activeElement;
+        if (!a || a === document.body) hwInput.focus();
+      }, 100);
+    });
 
     if ("serviceWorker" in navigator)
       navigator.serviceWorker.register("sw.js").catch(() => {});
