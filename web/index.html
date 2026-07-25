@@ -98,6 +98,19 @@
       <p class="hint" id="scanHint"></p>
     </div>
 
+    <div class="card" id="hwCard">
+      <label>⌨️ โหมดเครื่องสแกน (Hardware) — เร็วสุดสำหรับหน้า Gate</label>
+      <input id="hwInput" placeholder="แตะที่นี่ แล้วยิงบาร์โค้ด (เครื่องพิมพ์+Enter เอง)"
+             autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="none" />
+      <div class="row" style="margin-top:8px; align-items:center">
+        <button id="hwFocus" class="secondary" style="width:auto; padding:10px 14px">🎯 โฟกัสช่องสแกน</button>
+        <label style="display:flex; align-items:center; gap:6px; font-size:.85rem; color:var(--fg)">
+          <input type="checkbox" id="hwKeepFocus" checked style="width:auto" /> โฟกัสค้าง (สแกนต่อเนื่อง)
+        </label>
+      </div>
+      <p class="hint" id="hwHint">ใช้กับเครื่องสแกน 2D แบบ USB/Bluetooth (keyboard-wedge) — ตั้งค่าเครื่องให้ส่ง <b>Enter</b> ท้ายบาร์โค้ด · ยิงแล้วถอดรหัสทันที</p>
+    </div>
+
     <div class="card">
       <label for="raw">หรือวางข้อความดิบ (raw string) จากบาร์โค้ด</label>
       <textarea id="raw" placeholder="M1DESMARAIS/LUC       EABC123 YULFRAAC 0834 226F001A0025 100"></textarea>
@@ -426,6 +439,27 @@
       }
       e.target.value = "";
     };
+
+    // ---- โหมดเครื่องสแกน hardware (keyboard-wedge: พิมพ์ค่า + Enter) ----
+    const hwInput = $("hwInput");
+    hwInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {              // เครื่องสแกนส่ง Enter ท้ายบาร์โค้ด
+        e.preventDefault();
+        const v = hwInput.value.trim();
+        hwInput.value = "";
+        if (v) gotRaw(v);                   // ถอดรหัส + ตรวจ + log + ส่ง Sheet (pipeline เดียวกัน)
+        if ($("hwKeepFocus").checked) hwInput.focus();
+      }
+    });
+    $("hwFocus").onclick = () => hwInput.focus();
+    // ดึงโฟกัสกลับเมื่อโฟกัสหลุดไปที่ว่าง (ไม่แย่งตอนผู้ใช้กดช่อง/ปุ่มอื่น)
+    hwInput.addEventListener("blur", () => {
+      if (!$("hwKeepFocus").checked) return;
+      setTimeout(() => {
+        const a = document.activeElement;
+        if (!a || a === document.body) hwInput.focus();
+      }, 100);
+    });
 
     if ("serviceWorker" in navigator)
       navigator.serviceWorker.register("sw.js").catch(() => {});
