@@ -28,9 +28,13 @@
 
   function zxingReader() {
     const hints = new Map();
+    // จำกัดเฉพาะ 3 ฟอร์แมตที่ใช้จริง → ถอดเร็วขึ้น (ไม่ต้องลองฟอร์แมตอื่น)
     hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, twoDFormats());
     hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
-    return new ZXing.BrowserMultiFormatReader(hints);
+    // สแกนถี่ขึ้น: หน่วงหลังเจอผล 100ms และไม่หน่วงระหว่างพยายามถอด
+    const reader = new ZXing.BrowserMultiFormatReader(hints, 100);
+    reader.timeBetweenDecodingAttempts = 0;
+    return reader;
   }
 
   /** ถอดบาร์โค้ดจาก element ที่เป็นภาพนิ่ง (<img> หรือ <canvas>) → คืน raw string */
@@ -123,6 +127,9 @@
       facingMode: { ideal: "environment" },
       width: { ideal: 1920 },
       height: { ideal: 1080 },
+      // โฟกัสต่อเนื่อง → ลดเวล่าหากล้องหาโฟกัส (ตัวหน่วงหลักตอนสแกนกระดาษ)
+      // ถ้าอุปกรณ์ไม่รองรับจะถูกละเว้นเอง
+      advanced: [{ focusMode: "continuous" }],
     },
     audio: false,
   };
